@@ -1,42 +1,45 @@
 #=
-
-       (y)
-		|
-		|
-		|
-		|
-		|
-	    O-----------(x)
-       /
-      /
+     (y)
+      |
+      |
+      |
+      |
+      |
+      O-----------(x)
      /
-	/
-  (z) (z used for checking orientation)
+    /
+   /
+  /
+(z) (out of the page, z used for checking orientation)
 
 =#
 
-
+# to plot the points and the hull in 2D
 using Plots
+
+# for Uniform distribution
 using Distributions
-using LinearAlgebra
+
+# for reading points from file
+using DelimitedFiles
+
+# for function execution time
+using BenchmarkTools
 
 # FYI:
 # .* is dot product
 
-n_points = 50
-
-# n_points columns of 2d points with coordinate values between 0 and 10
-# points[i, :] gives the ith point
-points = rand(Uniform(0, 10), n_points, 2)
-# points = Float64.([0;0;; 1;1;; 3;3;; 5;5;; 1;0;; 3;2;; 5;4;; 6;5])'
-# points = Float64.([1;1;; 0;1;; 0;0;; 1;0;; 0;0.5;; 0.5;1;; 1;0.5;; 0.5;0;; 1;0.2;; 1;0.7])'
-
-# c - nx2 matrix of points where column 1 has x coordinates and column 2 has y coordinates.
-# n - Total number of points.
 #
 # Returns point(s) with minimum x.
-
-function find_minima_x(c, n)
+#
+# c - nx2 matrix of points where
+#     column 1 has x coordinates and
+#     column 2 has y coordinates.
+#
+# n - Total number of points.
+#
+function find_minima_x(c)
+  n = size(c)[1]
 	min_x_indices = [1]
 	for index in 2:n
 		if(c[index, :][1] < c[min_x_indices[1], :][1])
@@ -50,11 +53,38 @@ function find_minima_x(c, n)
 	return min_x_indices
 end
 
-# c - Nx2 matrix of points where column 1 has x coordinates and column 2 has y coordinates.
-# N - Total number of points.
-# show - If true, show plot.
-function find_hull(c, N, show)
-	min_x_indices = find_minima_x(c, N)
+#
+# function to find the convex_hull
+#
+#   show -> shows plot only if true
+#
+# filein -> Input file containing points.
+#           One point per line in the format "x y"
+#           Computes hull for random points if no
+#           input file is provided.
+#
+# Ex: find_hull(true, "points.txt")
+#
+function find_hull(show, filein = "")
+  if(filein == "")
+    # Just use this N if no input file is provided.
+    N = 50
+    # N rows of 2d points with coordinate values between 0 and 10
+    # points[i, :] gives the ith point
+    c = rand(Uniform(0, 10), N, 2)
+  else
+    c = readdlm(filein, ' ', Float64)
+    N = size(c)[1]
+
+    if(N < 3)
+      print("Never gonna find the hull. Provide atleast 3 points.");
+    end
+
+    # Not worth checking degenerate input.
+    # Will only cost time and it doesn't crash anyway.
+  end
+
+	min_x_indices = find_minima_x(c)
 	min_x_points = c[min_x_indices, :]
 
 	# This is so we pick the point with the least y
@@ -68,12 +98,12 @@ function find_hull(c, N, show)
 	# TODO: need to fix the case for multiple min points with same x
 	c = c[1:end .!=min_x_index, 1:end]
 
-	sort_angles = [((min_x_point - c[i, :])[2] / norm(c[i, :] - min_x_point)) for i in 1:(N - 1)]
-	sorted_indices = sortperm(sort_angles)
+	angles = [((min_x_point - c[i, :])[2] / norm(c[i, :] - min_x_point)) for i in 1:(N - 1)]
+	sorted_indices = sortperm(angles)
 
 	# The left most point is definitely on the hull.
 	# The point making the least angle is also on the hull.
-	hull = [min_x_point;; c[sorted_indices[1], :]]
+	hull = [min_x_point c[sorted_indices[1], :]]
 
 	# Remove the point making the least angle from the point list.
 	sorted_indices = sorted_indices[1:end .!=1]
@@ -102,7 +132,8 @@ function find_hull(c, N, show)
 			# z-coordinate of the cross product.
 			# > 0 means anti-clockwise which we want for the convex hull.
 			# < 0 is clockwise
-			orientation = cross([test_edge; 0], [hull_edge; 0])[3]
+      orientation = (test_edge[1] * hull_edge[2]) - (test_edge[2] * hull_edge[1])
+			# orientation = cross([test_edge; 0], [hull_edge; 0])[3]
 
 			if(orientation < 0.0)
 				# Remove the last point and add the new point (done after the while).
@@ -124,19 +155,22 @@ function find_hull(c, N, show)
 		end
 		
 		if(!skip_point)
-			hull = [hull;; point3]
+			hull = [hull point3]
 		end
 	end
 	
+  if(show)
+    display(scatter(c[:, 1], c[:, 2], legend = false, color = "blue", markersize = 1))
+    display(plot!(hull[1, :], hull[2, :]))
+    display(scatter!(hull[1, :], hull[2, :], color = "red", markersize = 3))
+  end
+
+  # TODO: Perhaps post process to detect degenerate hulls ?
+
 	# First vertex is also repeated at the end so the plot loops.
-	
-	if(show)
-		display(scatter(c[:, 1], c[:, 2], legend = false, color = "blue", markersize = 1))
-		display(plot!(hull[1, :], hull[2, :]))
-		display(scatter!(hull[1, :], hull[2, :], color = "red", markersize = 3))
-	end
-	
-	return hull
+  # remove it
+  hull = hull[1:end, 1:end .!=end]
 end
 
-convex_hull = find_hull(points, n_points, true)
+# to benchmark
+# @btime find_hull(false, "points.txt")
